@@ -8,39 +8,23 @@
  * Bump CACHE_VERSION on deploy to roll the cache.
  */
 
-const CACHE_VERSION = 'aoiro-v1';
+const CACHE_VERSION = 'cash-v1';
 
 /** Relative to the service worker's scope, so a GitHub Pages sub-path works. */
 const SHELL = [
   './',
   'index.html',
   'manifest.webmanifest',
-  'css/base.css',
-  'css/components.css',
-  'css/views.css',
+  'css/app.css',
   'js/app.js',
   'js/store.js',
-  'js/db.js',
-  'js/derive.js',
-  'js/fx.js',
-  'js/ui/dom.js',
-  'js/ui/charts.js',
-  'js/ui/icons.js',
-  'js/tax/rates.js',
-  'js/tax/engine.js',
-  'js/tax/sourcing.js',
-  'js/tax/advisor.js',
-  'js/accounting/accounts.js',
-  'js/accounting/journal.js',
-  'js/accounting/reports.js',
-  'js/accounting/depreciation.js',
-  'js/views/dashboard.js',
-  'js/views/transactions.js',
+  'js/crypto.js',
+  'js/money.js',
+  'js/categories.js',
+  'js/ui.js',
+  'js/views/home.js',
+  'js/views/history.js',
   'js/views/entry.js',
-  'js/views/tax.js',
-  'js/views/advisor.js',
-  'js/views/reports.js',
-  'js/views/calendar.js',
   'js/views/settings.js',
   'assets/icons/icon.svg',
   'assets/icons/icon-192.png',

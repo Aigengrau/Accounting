@@ -1,7 +1,7 @@
 {
-  "name": "aoiro",
+  "name": "cash",
   "version": "1.0.0",
-  "description": "Expense tracking, double-entry bookkeeping, tax calculation and advice for a foreign sole proprietor in Japan. Runs entirely in the browser with no backend.",
+  "description": "A simple cash book. Track what you have, what comes in and what goes out. Runs entirely on your phone.",
   "type": "module",
   "private": true,
   "license": "MIT",
@@ -17,6 +17,6 @@
     "playwright": "^1.63.0"
   },
   "comments": {
-    "dependencies": "The application itself has zero dependencies and no build step. Playwright is only needed to run the browser smoke test; npm test needs nothing but Node."
+    "dependencies": "The app has zero dependencies and no build step. Playwright is only needed for the browser smoke test; npm test needs nothing but Node."
   }
 }

@@ -1,103 +1,90 @@
 /**
- * Application state and the write path.
+ * State and storage.
  *
- * Every mutation flows through here, which keeps two invariants that matter:
+ * Everything lives in one IndexedDB record on this device. When a passcode is
+ * set, that record is encrypted and the key exists only in memory while the app
+ * is unlocked.
  *
- *   1. A transaction and its journal entries are written together. The books can
- *      never hold a transaction with no double-entry behind it.
- *   2. A locked FX rate is never silently overwritten. Editing a locked
- *      transaction records an amendment.
- *
- * Views subscribe and re-render; nothing reaches into IndexedDB directly.
+ * Writing the whole set on every change is not clever, but for a personal cash
+ * book it is instant and it makes the encrypted case trivial — there is one blob
+ * to encrypt and one to decrypt, so there is no way for half the data to end up
+ * in a different state from the other half.
  */
 
-import { db, STORES } from './db.js';
-import { postTransaction } from './accounting/journal.js';
-import { lockRate, amendRate } from './fx.js';
-import { DEFAULT_TAX_YEAR } from './tax/rates.js';
+import { deriveKey, encryptJson, decryptJson, randomSalt, isAvailable } from './crypto.js';
+import { today, monthKey } from './money.js';
 
+const DB_NAME = 'aoiro-basic';
+const DB_VERSION = 1;
+const VAULT = 'vault';
+const DATA_KEY = 'data';
+const META_KEY = 'meta';
+
+let dbPromise = null;
+let cryptoKey = null;       // held only while unlocked; never persisted
 const listeners = new Set();
-let state = createInitialState();
 
-function createInitialState() {
-  return {
-    ready: false,
-    taxYear: DEFAULT_TAX_YEAR,
-    transactions: [],
-    journal: [],
-    assets: [],
-    clients: [],
-    years: {},
-    settings: defaultSettings(),
-    ui: { view: 'dashboard', filter: {}, toast: null },
-  };
-}
+let state = {
+  ready: false,
+  locked: false,
+  encrypted: false,
+  entries: [],
+  settings: defaultSettings(),
+  view: 'home',
+  toast: null,
+};
 
 export function defaultSettings() {
   return {
-    // Profile
-    name: '',
-    businessName: '',
-    businessDescription: '',
-    city: '',
-    // Tax residency
-    isJapaneseNational: false,
-    hasJapanAddress: true,
-    yearsInJapan: 0,
-    arrivalDate: '',
-    // Filing posture
-    blueReturnType: 'etax_double_entry',
-    enterpriseCategory: 'category1',
-    monthsInBusiness: 12,
-    filedKaigyoTodoke: false,
-    filedBlueReturnApplication: false,
-    willFileViaEtax: true,
-    // Household
-    age: 35,
-    hasSpouse: false,
-    spouseIncome: 0,
-    spouseAge: 0,
-    dependents: [],
-    // Health insurance and pension
-    nhiPreset: 'tokyo23',
-    householdSize: 1,
-    nhiOverrides: null,
-    pensionMonths: 12,
-    pensionSupplementary: false,
-    // Consumption tax
-    consumptionTaxRegistered: false,
-    invoiceNumber: '',
-    simplifiedCategory: 'type5_services',
-    // Deductions paid in cash this year
-    paidNationalPension: 0,
-    paidHealthInsurance: 0,
-    smallEnterpriseMutual: 0,
-    ideco: 0,
-    lifeInsurance: 0,
-    earthquakeInsurance: 0,
-    medicalExpenses: 0,
-    donations: 0,
-    // Home office apportionment defaults
-    homeOfficeRatios: { rent: 0.25, utilities: 0.25, communication: 0.6 },
-    homeOfficeBasis: '',
-    // Currency and banking
     currencies: ['JPY', 'USD', 'RUB'],
-    primaryBank: '',
-    defaultRateSource: 'bank_actual',
-    // Preferences
-    language: 'en',
-    showJapanese: true,
+    startingCash: 0,
+    startingCashDate: today(),
     lastBackup: null,
+    theme: 'auto',
   };
 }
+
+// ------------------------------------------------------------------ database
+
+function openDb() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    if (!('indexedDB' in globalThis)) {
+      reject(new Error('This browser cannot store data locally.'));
+      return;
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(VAULT)) db.createObjectStore(VAULT);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('Could not open the database.'));
+    req.onblocked = () => reject(new Error('Another tab has the app open. Close it and reload.'));
+  });
+  return dbPromise;
+}
+
+function idb(mode, fn) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(VAULT, mode);
+    const store = tx.objectStore(VAULT);
+    let request;
+    try { request = fn(store); } catch (err) { reject(err); return; }
+    tx.oncomplete = () => resolve(request ? request.result : undefined);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted.'));
+  }));
+}
+
+const readRaw = (key) => idb('readonly', (s) => s.get(key));
+const writeRaw = (key, value) => idb('readwrite', (s) => s.put(value, key));
+
+// ------------------------------------------------------------- subscriptions
 
 export function subscribe(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
-}
-
-function emit() {
-  for (const fn of listeners) fn(state);
 }
 
 export function getState() {
@@ -106,285 +93,304 @@ export function getState() {
 
 function setState(patch) {
   state = { ...state, ...patch };
-  emit();
+  for (const fn of listeners) fn(state);
 }
 
-/** Loads everything from IndexedDB into memory. Called once at boot. */
-export async function initStore() {
-  const [transactions, journal, assets, clients, settingRows, yearRows] = await Promise.all([
-    db.getAll(STORES.TRANSACTIONS),
-    db.getAll(STORES.JOURNAL),
-    db.getAll(STORES.ASSETS),
-    db.getAll(STORES.CLIENTS),
-    db.getAll(STORES.SETTINGS),
-    db.getAll(STORES.YEARS),
-  ]);
+// ---------------------------------------------------------------- lifecycle
 
-  const stored = Object.fromEntries(settingRows.map((r) => [r.key, r.value]));
-  const settings = { ...defaultSettings(), ...(stored.profile || {}) };
-  const years = Object.fromEntries(yearRows.map((y) => [y.year, y]));
+/**
+ * Boots the app.
+ * Returns `{ locked: true }` when a passcode is set, in which case nothing is
+ * readable until `unlock` succeeds.
+ */
+export async function init() {
+  const meta = (await readRaw(META_KEY)) || { encrypted: false };
 
-  setState({
-    ready: true,
-    transactions: transactions.sort(byDateDesc),
-    journal,
-    assets,
-    clients,
-    years,
-    settings,
-    taxYear: stored.taxYear || guessTaxYear(transactions),
-  });
+  if (meta.encrypted) {
+    setState({ ready: true, locked: true, encrypted: true });
+    return state;
+  }
 
-  // Ask once for persistent storage so the browser is less likely to evict the books.
-  db.requestPersistence().catch(() => {});
+  const payload = (await readRaw(DATA_KEY)) || null;
+  applyPayload(payload);
+  setState({ ready: true, locked: false, encrypted: false });
+
+  // Ask the browser not to evict this data when storage runs low.
+  navigator.storage?.persist?.().catch(() => {});
   return state;
 }
 
-/** Defaults to the year the user is actually working in. */
-function guessTaxYear(transactions) {
-  const now = new Date();
-  // Jan–Mar is filing season for the previous year, so default there.
-  const candidate = now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear();
-  if (transactions.length === 0) return candidate;
-  const years = new Set(transactions.map((t) => Number(String(t.date).slice(0, 4))));
-  return years.has(candidate) ? candidate : Math.max(...years);
+/** Attempts to unlock. A wrong passcode fails the AES-GCM tag, so it throws. */
+export async function unlock(passcode) {
+  const meta = await readRaw(META_KEY);
+  if (!meta?.encrypted) throw new Error('No passcode is set.');
+
+  const key = await deriveKey(passcode, new Uint8Array(meta.salt));
+  const blob = await readRaw(DATA_KEY);
+
+  if (!blob) {
+    // Passcode set but nothing saved yet. Accept it and start clean.
+    cryptoKey = key;
+    applyPayload(null);
+    setState({ locked: false, encrypted: true });
+    return true;
+  }
+
+  let payload;
+  try {
+    payload = await decryptJson(key, blob);
+  } catch {
+    throw new Error('Wrong passcode.');
+  }
+
+  cryptoKey = key;
+  applyPayload(payload);
+  // Always land on the balance. Returning to whatever screen was open when the
+  // app locked is disorienting — you unlock to see how much you have.
+  setState({ locked: false, encrypted: true, view: 'home' });
+  navigator.storage?.persist?.().catch(() => {});
+  return true;
 }
 
-const byDateDesc = (a, b) => String(b.date).localeCompare(String(a.date));
-
-export async function setTaxYear(year) {
-  await db.setting('taxYear', year);
-  setState({ taxYear: Number(year) });
+/** Drops the key from memory. Data stays encrypted on disk. */
+export function lock() {
+  cryptoKey = null;
+  setState({ locked: true, entries: [], settings: defaultSettings() });
 }
 
-export async function updateSettings(patch) {
-  const settings = { ...state.settings, ...patch };
-  await db.setting('profile', settings);
-  setState({ settings });
-  return settings;
+function applyPayload(payload) {
+  setState({
+    entries: Array.isArray(payload?.entries) ? payload.entries.sort(byDateDesc) : [],
+    settings: { ...defaultSettings(), ...(payload?.settings || {}) },
+  });
 }
 
-export function setView(view, filter = {}) {
-  setState({ ui: { ...state.ui, view, filter } });
+async function persist() {
+  const payload = { version: 1, entries: state.entries, settings: state.settings };
+  if (state.encrypted) {
+    if (!cryptoKey) throw new Error('The app is locked.');
+    await writeRaw(DATA_KEY, await encryptJson(cryptoKey, payload));
+  } else {
+    await writeRaw(DATA_KEY, payload);
+  }
 }
 
-export function toast(message, kind = 'info') {
-  setState({ ui: { ...state.ui, toast: { message, kind, at: Date.now() } } });
-  setTimeout(() => {
-    if (state.ui.toast && Date.now() - state.ui.toast.at >= 3500) {
-      setState({ ui: { ...state.ui, toast: null } });
-    }
-  }, 3600);
+// ------------------------------------------------------------------ passcode
+
+/** Turns on encryption and rewrites the existing data under the new key. */
+export async function setPasscode(passcode) {
+  if (!isAvailable()) throw new Error('This browser cannot encrypt data.');
+  const salt = randomSalt();
+  const key = await deriveKey(passcode, salt);
+  cryptoKey = key;
+  await writeRaw(META_KEY, { encrypted: true, salt: Array.from(salt) });
+  setState({ encrypted: true });
+  await persist();
 }
 
-const newId = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+/** Turns encryption off, after checking the current passcode. */
+export async function removePasscode(currentPasscode) {
+  const meta = await readRaw(META_KEY);
+  if (!meta?.encrypted) return;
+  const key = await deriveKey(currentPasscode, new Uint8Array(meta.salt));
+  const blob = await readRaw(DATA_KEY);
+  if (blob) {
+    try { await decryptJson(key, blob); } catch { throw new Error('Wrong passcode.'); }
+  }
+  cryptoKey = null;
+  setState({ encrypted: false });
+  await writeRaw(META_KEY, { encrypted: false });
+  await persist();
+}
+
+export async function changePasscode(current, next) {
+  await removePasscode(current);
+  await setPasscode(next);
+}
+
+// -------------------------------------------------------------------- writes
+
+const newId = () => (crypto.randomUUID
+  ? crypto.randomUUID()
+  : `e${Date.now().toString(36)}${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`);
+const byDateDesc = (a, b) => (b.date === a.date
+  ? String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+  : String(b.date).localeCompare(String(a.date)));
 
 /**
- * Saves a transaction and its journal entries together.
+ * Saves an entry.
  *
- * `draft.fx` may be either an already-locked record or the raw inputs to lock.
- * Locking here rather than in the view means no code path can store an unlocked
- * rate.
+ * `jpy` is what the money is worth in yen and is what every total uses. For a
+ * yen entry it equals the amount; for foreign currency you supply what you
+ * actually received.
  */
-export async function saveTransaction(draft) {
-  const id = draft.id || newId('tx');
-  const date = draft.date || new Date().toISOString().slice(0, 10);
+export async function saveEntry(draft) {
+  const amount = Number(draft.amount) || 0;
+  const currency = draft.currency || 'JPY';
+  const jpy = currency === 'JPY' ? Math.round(amount) : Math.round(Number(draft.jpy) || 0);
 
-  const fx = draft.fx?.lockedAt
-    ? draft.fx
-    : lockRate({
-        amount: Number(draft.amount),
-        currency: draft.currency || 'JPY',
-        date,
-        jpyCredited: draft.jpyCredited ?? null,
-        rate: draft.rate ?? null,
-        source: draft.rateSource ?? null,
-        sourceNote: draft.sourceNote || '',
-        bankName: draft.bankName || state.settings.primaryBank || '',
-        fees: Number(draft.fees) || 0,
-        crossRate: draft.crossRate || null,
-      });
+  const type = ['income', 'adjust'].includes(draft.type) ? draft.type : 'expense';
+  let rate = 1;
+  if (currency !== 'JPY') rate = amount ? jpy / amount : 0;
 
-  const tx = {
-    id,
-    date,
-    year: Number(String(date).slice(0, 4)),
-    kind: draft.kind || 'expense',
-    account: draft.account,
-    settlement: draft.settlement || '110',
-    from: draft.from,
-    to: draft.to,
-    description: draft.description || '',
-    clientId: draft.clientId || null,
-    amount: fx.jpy,
-    fx,
-    businessRatio: draft.businessRatio ?? 1,
-    ratioBasis: draft.ratioBasis || '',
-    withholding: Number(draft.withholding) || 0,
-    // Sourcing fields, used by the non-permanent resident analysis.
-    incomeSource: draft.incomeSource || null,
-    paidIn: draft.paidIn || null,
-    workPerformedIn: draft.workPerformedIn || null,
-    isExportExempt: !!draft.isExportExempt,
-    isRemittance: !!draft.isRemittance,
-    receiptId: draft.receiptId || null,
+  const entry = {
+    id: draft.id || newId(),
+    type,
+    date: draft.date || today(),
+    amount,
+    currency,
+    jpy,
+    rate,
+    category: draft.category || (draft.type === 'income' ? 'other-income' : 'other'),
+    note: (draft.note || '').trim(),
+    // Room to add bank accounts later without reshaping anything.
+    account: draft.account || 'cash',
     createdAt: draft.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
-  // Replace any prior journal entries for this transaction so an edit does not
-  // leave orphaned postings behind.
-  const priorEntries = state.journal.filter((e) => e.transactionId === id);
-  for (const e of priorEntries) await db.delete(STORES.JOURNAL, e.id);
+  const entries = [...state.entries.filter((e) => e.id !== entry.id), entry].sort(byDateDesc);
+  setState({ entries });
+  await persist();
+  return entry;
+}
 
-  const entry = postTransaction(tx);
-  await db.put(STORES.TRANSACTIONS, tx);
-  await db.put(STORES.JOURNAL, entry);
+export async function deleteEntry(id) {
+  setState({ entries: state.entries.filter((e) => e.id !== id) });
+  await persist();
+}
 
-  const transactions = [...state.transactions.filter((t) => t.id !== id), tx].sort(byDateDesc);
-  const journal = [...state.journal.filter((e) => e.transactionId !== id), entry];
-  setState({ transactions, journal });
-  return tx;
+export async function updateSettings(patch) {
+  setState({ settings: { ...state.settings, ...patch } });
+  await persist();
+  return state.settings;
 }
 
 /**
- * Edits a transaction whose FX rate is already locked.
- * The prior rate is preserved as an amendment rather than overwritten.
+ * Records a cash count.
+ *
+ * Real cash never quite matches a running total — small purchases go unrecorded.
+ * Rather than pretend, this books the difference as a visible adjustment so the
+ * balance matches the notes in your pocket.
  */
-export async function amendTransaction(id, changes, reason) {
-  const existing = state.transactions.find((t) => t.id === id);
-  if (!existing) throw new Error('Transaction not found.');
-
-  const touchesRate = ['amount', 'rate', 'jpyCredited', 'rateSource', 'date', 'fees'].some(
-    (k) => changes[k] !== undefined,
-  );
-
-  const fx = touchesRate
-    ? amendRate(existing.fx, {
-        amount: changes.amount, rate: changes.rate, jpyCredited: changes.jpyCredited,
-        source: changes.rateSource, date: changes.date, fees: changes.fees,
-        sourceNote: changes.sourceNote,
-      }, reason)
-    : existing.fx;
-
-  return saveTransaction({ ...existing, ...changes, fx });
-}
-
-export async function deleteTransaction(id) {
-  const entries = state.journal.filter((e) => e.transactionId === id);
-  for (const e of entries) await db.delete(STORES.JOURNAL, e.id);
-  await db.delete(STORES.TRANSACTIONS, id);
-  setState({
-    transactions: state.transactions.filter((t) => t.id !== id),
-    journal: state.journal.filter((e) => e.transactionId !== id),
+export async function recordCashCount(actualJpy, date = today()) {
+  const difference = Math.round(actualJpy) - cashBalance();
+  if (difference === 0) return null;
+  // The amount is signed: negative means cash you spent without recording it.
+  return saveEntry({
+    type: 'adjust',
+    date,
+    amount: difference,
+    currency: 'JPY',
+    category: 'other',
+    note: difference > 0
+      ? 'Cash count — more than expected'
+      : 'Cash count — unrecorded spending',
   });
 }
 
-/** Fixed asset register (固定資産台帳), used for the depreciation schedule. */
-export async function saveAsset(draft) {
-  const asset = {
-    id: draft.id || newId('asset'),
-    name: draft.name,
-    category: draft.category || 'other',
-    acquiredDate: draft.acquiredDate,
-    cost: Number(draft.cost) || 0,
-    usefulLife: Number(draft.usefulLife) || 5,
-    method: draft.method || 'straight_line',
-    businessRatio: draft.businessRatio ?? 1,
-    treatment: draft.treatment || 'depreciate', // depreciate | lump_sum_3y | immediate_300k | expensed
-    disposedDate: draft.disposedDate || null,
-    notes: draft.notes || '',
-    updatedAt: new Date().toISOString(),
-  };
-  await db.put(STORES.ASSETS, asset);
-  setState({ assets: [...state.assets.filter((a) => a.id !== asset.id), asset] });
-  return asset;
+// ----------------------------------------------------------------- selectors
+
+/** Signed yen effect of an entry on your cash. */
+export function signedJpy(entry) {
+  // Adjustments are stored already signed; income adds, everything else subtracts.
+  if (entry.type === 'income' || entry.type === 'adjust') return entry.jpy;
+  return -entry.jpy;
 }
 
-export async function deleteAsset(id) {
-  await db.delete(STORES.ASSETS, id);
-  setState({ assets: state.assets.filter((a) => a.id !== id) });
+export function cashBalance() {
+  const start = Number(state.settings.startingCash) || 0;
+  return state.entries.reduce((sum, e) => sum + signedJpy(e), start);
 }
 
-export async function saveClient(draft) {
-  const client = {
-    id: draft.id || newId('client'),
-    name: draft.name,
-    country: draft.country || '',
-    isNonResident: !!draft.isNonResident,
-    currency: draft.currency || 'USD',
-    defaultWorkLocation: draft.defaultWorkLocation || 'japan',
-    notes: draft.notes || '',
-  };
-  await db.put(STORES.CLIENTS, client);
-  setState({ clients: [...state.clients.filter((c) => c.id !== client.id), client] });
-  return client;
+export function entriesForMonth(key) {
+  return state.entries.filter((e) => monthKey(e.date) === key);
 }
 
-export async function deleteClient(id) {
-  await db.delete(STORES.CLIENTS, id);
-  setState({ clients: state.clients.filter((c) => c.id !== id) });
+export function monthTotals(key) {
+  const rows = entriesForMonth(key);
+  const income = rows.filter((e) => e.type === 'income').reduce((s, e) => s + e.jpy, 0);
+  const spent = rows.filter((e) => e.type === 'expense').reduce((s, e) => s + e.jpy, 0);
+  const adjusted = rows.filter((e) => e.type === 'adjust').reduce((s, e) => s + e.jpy, 0);
+  return { income, spent, adjusted, net: income - spent + adjusted, count: rows.length };
 }
 
-/** Per-year state: opening capital, filing status, carried-forward losses. */
-export async function saveYear(year, patch) {
-  const existing = state.years[year] || { year: Number(year) };
-  const row = { ...existing, ...patch, year: Number(year) };
-  await db.put(STORES.YEARS, row);
-  setState({ years: { ...state.years, [year]: row } });
-  return row;
+/** Spending by category for a month, largest first. */
+export function spendingByCategory(key) {
+  const totals = new Map();
+  for (const e of entriesForMonth(key)) {
+    if (e.type !== 'expense') continue;
+    totals.set(e.category, (totals.get(e.category) || 0) + e.jpy);
+  }
+  return [...totals.entries()]
+    .map(([id, amount]) => ({ id, amount }))
+    .sort((a, b) => b.amount - a.amount);
 }
 
-// ------------------------------------------------------------------- selectors
-
-export function transactionsForYear(year = state.taxYear) {
-  return state.transactions.filter((t) => t.year === Number(year));
+/** Income by source for a year — the figures you will need if you ever file. */
+export function incomeByYear(year) {
+  const totals = new Map();
+  for (const e of state.entries) {
+    if (e.type !== 'income') continue;
+    if (!String(e.date).startsWith(String(year))) continue;
+    totals.set(e.category, (totals.get(e.category) || 0) + e.jpy);
+  }
+  return [...totals.entries()]
+    .map(([id, amount]) => ({ id, amount }))
+    .sort((a, b) => b.amount - a.amount);
 }
 
-export function journalForYear(year = state.taxYear) {
-  return state.journal.filter((e) => String(e.date).startsWith(String(year)));
+export function monthsWithEntries() {
+  return [...new Set(state.entries.map((e) => monthKey(e.date)))]
+    .sort((a, b) => b.localeCompare(a));
 }
 
-export function remittancesForYear(year = state.taxYear) {
-  return transactionsForYear(year).filter((t) => t.isRemittance);
+// ------------------------------------------------------------------ ui state
+
+export function setView(view) {
+  setState({ view });
 }
 
-/** Income streams shaped for the sourcing engine. */
-export function incomeStreamsForYear(year = state.taxYear) {
-  return transactionsForYear(year)
-    .filter((t) => t.kind === 'income')
-    .map((t) => ({
-      id: t.id,
-      amountJpy: t.fx?.jpy ?? t.amount,
-      source: t.incomeSource || 'japan',
-      paidIn: t.paidIn || 'japan',
-      workPerformedIn: t.workPerformedIn || 'japan',
-      description: t.description,
-      clientId: t.clientId,
-    }));
+export function toast(message, kind = 'info') {
+  setState({ toast: { message, kind, at: Date.now() } });
+  setTimeout(() => {
+    if (state.toast && Date.now() - state.toast.at >= 2800) setState({ toast: null });
+  }, 2900);
 }
 
-// ------------------------------------------------------------ backup / restore
+// ------------------------------------------------------------ backup, wipe
 
 export async function exportBackup() {
-  const backup = await db.exportAll();
   await updateSettings({ lastBackup: new Date().toISOString() });
-  return backup;
+  return {
+    format: 'aoiro-basic-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    entryCount: state.entries.length,
+    entries: state.entries,
+    settings: state.settings,
+  };
 }
 
-export async function importBackup(json, mode = 'replace') {
-  const restored = await db.importAll(json, mode);
-  await initStore();
-  return restored;
+export async function importBackup(backup) {
+  if (backup?.format !== 'aoiro-basic-backup') throw new Error('That is not a backup from this app.');
+  if (!Array.isArray(backup.entries)) throw new Error('That backup has no entries in it.');
+  setState({
+    entries: backup.entries.sort(byDateDesc),
+    settings: { ...defaultSettings(), ...(backup.settings || {}) },
+  });
+  await persist();
+  return backup.entries.length;
 }
 
 export async function wipeEverything() {
-  await db.wipe();
-  state = createInitialState();
-  await initStore();
+  cryptoKey = null;
+  await idb('readwrite', (s) => s.clear());
+  setState({
+    entries: [], settings: defaultSettings(), encrypted: false, locked: false,
+  });
 }
 
-/** Days since the last export, so the UI can nag proportionately. */
 export function daysSinceBackup() {
   const last = state.settings.lastBackup;
   if (!last) return Infinity;

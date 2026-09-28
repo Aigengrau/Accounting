@@ -1,230 +1,147 @@
-# Aoiro 青
+# Cash
 
-Expense tracking, double-entry bookkeeping, tax calculation and advice for a
-**foreign sole proprietor filing a blue return in Japan**.
+A simple cash book. How much you have, what came in, what went out.
 
-It runs entirely in your browser, installs to an Android home screen, works
-offline, and never sends your financial data anywhere — there is no server to
-send it to.
+Runs entirely on your phone. No account, no server, nothing sent anywhere.
+
+> This is the **`basic`** branch. The `main` branch has a much bigger version with
+> double-entry bookkeeping and full Japanese tax calculation — useful once you
+> register a business and need to file. This one is for tracking cash.
 
 ---
 
 ## What it does
 
-**Tracks money in three currencies.** Yen, dollars and rubles, with the exchange
-rate locked per transaction and an audit trail behind it. When your bank converts
-incoming dollars itself, you enter the yen it actually credited and the rate is
-derived from that — the strongest possible evidence, and the least typing.
+- **Cash on hand** — one number, the biggest thing on the screen
+- **Money out** — everyday spending in twelve plain categories
+- **Money in** — kept separate by source: apartment rent, freelance, gifts, other
+- **Foreign currency** — record dollars or rubles and the yen you actually got
+- **Count my cash** — when the wallet disagrees with the app, recount and the
+  difference is recorded honestly instead of quietly drifting
+- **Passcode** — optional, and it genuinely encrypts your data rather than just
+  hiding the screen
 
-**Keeps real double-entry books.** Every entry posts a balanced journal entry,
-builds a general ledger, and produces a balance sheet that reconciles. That is
-what the ¥650,000 blue-return deduction is paid for; simple bookkeeping only earns
-¥100,000.
-
-**Calculates every levy, with the working shown.** Income tax, the reconstruction
-surtax, resident tax, enterprise tax, consumption tax, national health insurance
-and national pension — each with a line-by-line derivation and the statute it
-rests on.
-
-**Advises, in yen.** Each recommendation is re-run through the tax engine so it
-can state what it actually saves. Compliance risks are ranked above savings.
-
-**Handles the non-permanent resident rules properly**, including the remittance
-ordering in 所得税法施行令 17条 and the traps that catch people out.
+That is the whole app. Three screens.
 
 ---
 
-## The thing most people get wrong
+## Money from abroad
 
-If you are on a spouse visa doing freelance work for a foreign client, it is
-tempting to think the income is foreign-source and therefore shielded by your
-non-permanent resident status.
+You get rent from a flat you let out overseas, and freelance work. Enter the
+amount in its own currency and then the **yen you actually received** — after the
+exchange, after fees. That way your balance matches what is really in your hand,
+and the recorded yen figure is the one that would matter on a tax return.
 
-It almost certainly is not.
+The two sources stay tagged separately all the way through. That is not
+bureaucracy for its own sake: in Japan, rent from a foreign property and freelance
+work you perform here are taxed under quite different rules, and having them
+already separated is the difference between an hour's work and a weekend's.
 
-Business income is sourced **where the work is performed**. If you are sitting in
-Japan when you do it, you have a permanent establishment here, and the income is
-attributable to it — which makes it Japan-source and fully taxable from your first
-day of residence. The client's location, the invoice currency, and which bank gets
-paid change none of that.
+**Worth knowing, even with no registered business:** freelance work you do while
+living in Japan is taxable here from the first yen, whatever country the client is
+in. There is no threshold that makes it invisible. Nothing to do about it today —
+but keep the records, which is what this app is for. `docs/tax-guide.md` has the
+detail when you need it.
 
-And separately: anything paid **into a Japanese account is "paid in Japan"**
-(国内払い) and taxable immediately, with no remittance analysis at all.
+---
 
-The non-permanent resident shelter is real, but it covers foreign rent, foreign
-dividends, foreign interest and — most valuably — **capital gains on foreign
-securities**, as long as they are paid abroad and stay abroad. If you hold
-appreciated foreign assets, realising them before you cross five years of
-residence is the single largest tax decision available to you.
+## Your data
 
-The app is built around these rules rather than around the hopeful version, and
-explains its reasoning on screen.
+It lives in this browser, on this phone. There is no account and no sync, and
+nothing you type is ever transmitted. The only network request the app can make is
+an optional exchange-rate lookup, which works fine offline by simply not
+happening.
+
+### The passcode
+
+Turning it on encrypts everything with AES-GCM, using a key stretched from your
+passcode with 250,000 rounds of PBKDF2. Both come from the browser's own crypto —
+nothing hand-rolled.
+
+**The passcode is not stored anywhere.** That is what makes it work, and it means
+nobody can recover your data if you forget it. Not you, not me, not a support
+desk. The app says so before you turn it on.
+
+### Back up
+
+Settings → Save a backup writes one JSON file with everything in it. Do this
+occasionally and keep it somewhere you will still have it if the phone goes in a
+river.
+
+Clearing your browser data, switching phone, or reinstalling deletes everything
+otherwise. The backup file is plain text so it can always be restored — keep it
+somewhere private.
 
 ---
 
 ## Running it
 
-No build step, no dependencies, no bundler.
+No build step, no dependencies.
 
 ```bash
-npm run serve          # http://localhost:8080
+npm run serve      # then open the Network address it prints, on your phone
+npm test           # 24 checks: balance arithmetic, amount parsing, encryption
+npm run smoke      # drives the real app in Chromium (needs Playwright)
 ```
 
-Open the Network address it prints to try it on your phone over Wi-Fi.
+`npm test` needs nothing but Node.
+
+## Installing on your phone
+
+1. Open the site in Chrome
+2. Menu (⋮) → **Add to Home screen**
+3. It opens full-screen, works offline, and keeps everything locally
+
+Installing needs HTTPS, which GitHub Pages provides.
+
+## Deploying
+
+The GitHub Actions workflow publishes on push to **`main`**, which currently holds
+the full accounting version. To make *this* one the live site, either:
 
 ```bash
-npm test               # 57 assertions against hand-checked NTA figures
-npm run smoke          # drives the real app in Chromium (needs Playwright)
-npm run icons          # regenerate the PWA icons
+git checkout main && git merge basic     # replace main with the simple version
 ```
 
-`npm test` needs nothing but Node. Playwright is only for the browser test.
+or edit `.github/workflows/pages.yml` and change the trigger branch to `basic`.
 
 ---
 
-## Deploying to GitHub Pages
-
-```bash
-git add -A
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR-USERNAME/aoiro.git
-git push -u origin main
-```
-
-Then in the repository: **Settings → Pages → Source → GitHub Actions**.
-
-The included workflow runs the tests and publishes on every push to `main`. Your
-app appears at `https://YOUR-USERNAME.github.io/aoiro/`.
-
-Every path in the app is relative, so it works from that sub-path with no
-configuration.
-
-> **Make the repository private if you like** — GitHub Pages on a private repo
-> needs a paid plan, but it changes nothing about your data either way. Nothing
-> you enter is ever committed, uploaded, or transmitted. The repository holds the
-> program; your phone holds the books.
-
----
-
-## Installing on Android
-
-1. Open the GitHub Pages URL in Chrome.
-2. Menu (⋮) → **Add to Home screen** (or **Install app**).
-3. Launch it from the home screen. It opens full-screen with no browser chrome
-   and works with no connection.
-
-Installing needs HTTPS, which GitHub Pages provides automatically.
-
----
-
-## Where your data lives
-
-In this browser, on this device, in IndexedDB. That is the whole story.
-
-There is no account, no sync, no analytics, and no network request carrying your
-figures. The only outbound request the app can make is an optional exchange-rate
-lookup, which is clearly labelled as a reference rate and fails quietly offline.
-
-**Which means: back up.** Clearing site data, switching browser, or resetting the
-phone deletes your books permanently. Settings → Export writes one JSON file
-holding everything. The app nags you about it, increasingly, and it is right to.
-
-Keep the export next to your receipts. The tax office expects you to retain both
-for seven years.
-
----
-
-## How it is put together
+## How it is built
 
 ```
-index.html              app shell
-manifest.webmanifest    PWA manifest, installable on Android
-sw.js                   service worker: offline + installability
-
-css/
-  base.css              design tokens; light and dark are two selected palettes
-  components.css        cards, forms, charts, sheets
-  views.css             navigation and per-screen layout
+index.html            the shell
+css/app.css           one stylesheet, light and dark
+sw.js                 offline support and installability
 
 js/
-  app.js                boot, hash routing, render loop
-  store.js              state and the single write path
-  db.js                 IndexedDB persistence, export and restore
-  derive.js             one cached derivation feeding every screen
-  fx.js                 exchange-rate locking, validation, audit scoring
-
-  tax/
-    rates.js            every statutory figure, per year, with sources
-    engine.js           the computation, with statutory rounding
-    sourcing.js         Japan- vs foreign-source, and the remittance rules
-    advisor.js          recommendations, priced by re-running the engine
-
-  accounting/
-    accounts.js         chart of accounts (勘定科目), mapped to form boxes
-    journal.js          double-entry posting and the ledger
-    reports.js          P&L, balance sheet, 青色申告決算書, CSV export
-    depreciation.js     fixed assets and the three write-off treatments
-
-  ui/                   DOM helpers, inline-SVG charts, icons
-  views/                one module per screen
+  app.js              boot, lock screen, navigation
+  store.js            state, storage, balance arithmetic
+  crypto.js           passcode encryption
+  money.js            currencies, parsing, formatting
+  categories.js       the category lists
+  ui.js               DOM helpers and icons
+  views/
+    home.js           balance, this month, breakdown
+    history.js        everything, grouped by month
+    entry.js          adding and editing
+    settings.js       passcode, backup, currencies
 ```
 
-Two design decisions worth knowing about:
+Around 2,000 lines, against roughly 10,000 on `main`. Plain JavaScript, no
+framework, no build.
 
-**Rates are data, not code.** `js/tax/rates.js` holds every statutory figure in a
-frozen per-year object with source links and a `verified` date. Updating for a new
-tax year means editing one file, and the app warns you on screen when the tables go
-stale.
+Two things worth knowing if you change it:
 
-**Nothing computes twice.** `derive.js` produces one cached result that the
-dashboard, the tax screen and the advisor all read, so they can never quietly
-disagree about what you owe.
+**Amounts are stored twice** — what you received (`amount` + `currency`) and what
+it was worth (`jpy`). Every total uses `jpy`. Never total the `amount` field
+across currencies.
 
----
-
-## Updating for a new tax year
-
-1. Open `js/tax/rates.js`.
-2. Copy the most recent `buildYear(...)` entry and adjust what the reform changed.
-3. Update `meta.verified`.
-4. Run `npm test`.
-
-The figures most likely to move each year: the basic deduction, the national
-pension premium, your municipality's health insurance rates, and the consumption
-tax special measures.
-
-Note that the 2025 reform's raised basic deduction has a **two-year bonus tier**
-for lower incomes that lapses after 2026 — `rates.js` already models this, and 2027
-reverts correctly.
+**Adjustments carry their own sign.** A cash count that comes up short stores a
+negative `jpy`, so `signedJpy` adds it rather than subtracting. That keeps a
+shortfall visible as its own entry instead of silently altering the numbers you
+already recorded.
 
 ---
 
-## Limits you should know about
-
-- **Health insurance figures are estimates.** Every municipality sets its own
-  rates and revises them each April. Four presets ship with the app; override them
-  from your own 保険料決定通知書 in Settings and the number becomes exact.
-- **The ふるさと納税 ceiling is approximate.** It uses the standard approximation,
-  which lands within a few percent. Leave headroom.
-- **Enterprise tax category is your call.** Whether your work is 請負業 (taxed at
-  5%) or falls outside the 70 listed categories (taxed at nothing) depends on what
-  your contracts actually describe. Ask your prefectural tax office.
-- **It does not file for you.** It produces the figures and the statements; you
-  still enter them into e-Tax.
-
----
-
-## This is not tax advice
-
-It is a calculator and a rule-based reading of the general position, written by
-someone who is not a tax professional. Every recommendation names the statute
-behind it so you can check the reasoning.
-
-Anything with real money attached is worth an hour with a 税理士 who works with
-foreign residents. That hour usually pays for itself several times over — and this
-app will make it a much shorter hour, because you will arrive with balanced books
-and specific questions.
-
----
-
-MIT licensed. See `LICENSE`.
+MIT licensed.

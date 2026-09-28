@@ -3,28 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Aoiro — Japan freelance tax and accounting</title>
-<meta name="description" content="Expense tracking, double-entry bookkeeping, tax calculation and advice for a foreign sole proprietor in Japan. Runs entirely on your device.">
+<title>Cash — simple money tracker</title>
+<meta name="description" content="A simple cash book. Track what you have, what comes in and what goes out. Everything stays on your phone.">
 
-<!-- Installable as an Android app. Paths are relative so it works from a GitHub Pages sub-path. -->
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#1b1b1a" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Aoiro">
+<meta name="apple-mobile-web-app-title" content="Cash">
 <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
 
-<link rel="stylesheet" href="css/base.css">
-<link rel="stylesheet" href="css/components.css">
-<link rel="stylesheet" href="css/views.css">
+<link rel="stylesheet" href="css/app.css">
 
-<!-- Avoids a flash of the wrong theme before the module loads. -->
 <script>
   try {
-    var t = localStorage.getItem('aoiro-theme');
+    var t = localStorage.getItem('cash-theme');
     if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
   } catch (e) {}
 </script>
@@ -32,24 +27,16 @@
 <body>
 
 <header class="app-header" id="header"></header>
-
-<main class="app-shell" id="app">
-  <div class="view">
-    <div class="card">
-      <p>Loading your books…</p>
-    </div>
-  </div>
-</main>
-
+<main class="app-main" id="app"></main>
 <nav class="nav" id="nav" aria-label="Main"></nav>
 
 <noscript>
-  <div class="app-shell">
+  <div class="app-main">
     <div class="view">
       <div class="card">
-        <h2>JavaScript is required</h2>
-        <p>Aoiro does all of its calculation on your device, which means it needs JavaScript. Nothing is computed
-        on a server, because nothing is sent to one.</p>
+        <h2>JavaScript is needed</h2>
+        <p>This app runs entirely on your phone, so it needs JavaScript. Nothing is calculated on a server,
+        because nothing is ever sent to one.</p>
       </div>
     </div>
   </div>

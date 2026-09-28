@@ -1,17 +1,21 @@
 {
-  "name": "Aoiro — Japan freelance tax",
-  "short_name": "Aoiro",
-  "description": "Expense tracking, double-entry bookkeeping, tax calculation and advice for a foreign sole proprietor in Japan. All data stays on your device.",
+  "name": "Cash — simple money tracker",
+  "short_name": "Cash",
+  "description": "Track the cash you have, what comes in and what goes out. Everything stays on your phone.",
   "start_url": "./",
   "scope": "./",
-  "id": "aoiro-japan-tax",
+  "id": "cash-basic",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f9f9f7",
+  "background_color": "#f7f7f5",
   "theme_color": "#fcfcfb",
   "lang": "en",
   "dir": "ltr",
-  "categories": ["finance", "productivity", "business"],
+  "categories": [
+    "finance",
+    "productivity",
+    "business"
+  ],
   "icons": [
     {
       "src": "assets/icons/icon-192.png",
@@ -40,22 +44,16 @@
   ],
   "shortcuts": [
     {
-      "name": "Add an entry",
-      "short_name": "Add",
-      "url": "./#/transactions",
-      "description": "Record income or an expense"
+      "name": "Add money out",
+      "short_name": "Spend",
+      "url": "./#/home",
+      "description": "Record something you paid for"
     },
     {
-      "name": "Tax estimate",
-      "short_name": "Tax",
-      "url": "./#/tax",
-      "description": "See what you owe and why"
-    },
-    {
-      "name": "Deadlines",
-      "short_name": "Calendar",
-      "url": "./#/calendar",
-      "description": "What is due and when"
+      "name": "History",
+      "short_name": "History",
+      "url": "./#/history",
+      "description": "Everything you have recorded"
     }
   ]
 }
