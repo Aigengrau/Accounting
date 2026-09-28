@@ -1,0 +1,22 @@
+{
+  "name": "aoiro",
+  "version": "1.0.0",
+  "description": "Expense tracking, double-entry bookkeeping, tax calculation and advice for a foreign sole proprietor in Japan. Runs entirely in the browser with no backend.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:shots": "node scripts/smoke.mjs --screenshots",
+    "icons": "node scripts/make-icons.mjs",
+    "serve": "node scripts/serve.mjs",
+    "check": "node scripts/test.mjs && node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  },
+  "comments": {
+    "dependencies": "The application itself has zero dependencies and no build step. Playwright is only needed to run the browser smoke test; npm test needs nothing but Node."
+  }
+}

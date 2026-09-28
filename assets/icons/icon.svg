@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Aoiro">
+  <rect x="28" y="28" width="456" height="456" rx="103" fill="#2a78d6"/>
+  <g fill="#ffffff">
+    <rect x="98" y="190" width="317" height="44" rx="22"/>
+    <rect x="98" y="256" width="209" height="44" rx="22"/>
+    <rect x="98" y="322" width="273" height="44" rx="22"/>
+  </g>
+</svg>

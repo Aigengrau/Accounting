@@ -1,0 +1,205 @@
+/**
+ * Design tokens, reset, typography.
+ *
+ * Light and dark are two selected palettes rather than an inversion. Dark values
+ * are declared twice — once under the OS media query, once under an explicit
+ * [data-theme] — so a manual toggle wins in both directions.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --surface: #fcfcfb;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f4f3f0;
+  --plane: #f9f9f7;
+
+  /* Ink */
+  --ink: #0b0b0b;
+  --ink-secondary: #52514e;
+  --ink-muted: #898781;
+
+  /* Lines */
+  --border: rgba(11, 11, 11, 0.1);
+  --border-strong: #c3c2b7;
+  --gridline: #e1e0d9;
+
+  /* Series — validated for CVD separation and contrast on both surfaces */
+  --series-1: #2a78d6;  /* taxes */
+  --series-2: #eb6834;  /* social insurance */
+  --series-1-wash: rgba(42, 120, 214, 0.1);
+  --series-2-wash: rgba(235, 104, 52, 0.1);
+
+  /* Status — fixed, never themed. Always paired with an icon or label. */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --good-text: #006300;
+  --critical-text: #b32020;
+
+  /* Accent */
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --accent-wash: rgba(42, 120, 214, 0.08);
+
+  /* Type */
+  --font: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+
+  /* Spacing */
+  --gap-xs: 4px;
+  --gap-sm: 8px;
+  --gap: 14px;
+  --gap-lg: 22px;
+  --gap-xl: 32px;
+
+  --radius-sm: 6px;
+  --radius: 12px;
+  --radius-lg: 18px;
+
+  --shadow: 0 1px 2px rgba(11, 11, 11, 0.06), 0 4px 14px rgba(11, 11, 11, 0.05);
+  --shadow-lifted: 0 2px 6px rgba(11, 11, 11, 0.08), 0 12px 32px rgba(11, 11, 11, 0.12);
+
+  --nav-height: 60px;
+  --max-width: 720px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --surface: #1a1a19;
+    --surface-raised: #242423;
+    --surface-sunken: #131312;
+    --plane: #0d0d0d;
+
+    --ink: #ffffff;
+    --ink-secondary: #c3c2b7;
+    --ink-muted: #898781;
+
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: #383835;
+    --gridline: #2c2c2a;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-1-wash: rgba(57, 135, 229, 0.14);
+    --series-2-wash: rgba(217, 89, 38, 0.14);
+
+    --good-text: #0ca30c;
+    --critical-text: #e66767;
+
+    --accent: #3987e5;
+    --accent-wash: rgba(57, 135, 229, 0.12);
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+    --shadow-lifted: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --surface: #1a1a19;
+  --surface-raised: #242423;
+  --surface-sunken: #131312;
+  --plane: #0d0d0d;
+
+  --ink: #ffffff;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #898781;
+
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: #383835;
+  --gridline: #2c2c2a;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-1-wash: rgba(57, 135, 229, 0.14);
+  --series-2-wash: rgba(217, 89, 38, 0.14);
+
+  --good-text: #0ca30c;
+  --critical-text: #e66767;
+
+  --accent: #3987e5;
+  --accent-wash: rgba(57, 135, 229, 0.12);
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --shadow-lifted: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--plane);
+  /* Keeps content clear of the nav bar and the phone's home indicator. */
+  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+  overscroll-behavior-y: contain;
+}
+
+h1, h2, h3, h4 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.1rem; }
+h3 { font-size: 0.95rem; }
+
+p { margin: 0 0 var(--gap-sm); }
+p:last-child { margin-bottom: 0; }
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+small { font-size: 0.8rem; }
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Columns of figures align; standalone numbers use proportional figures. */
+.amount, .chart-tick, table td, table th, .deriv-row .amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

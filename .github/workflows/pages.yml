@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+# The app has no build step, so this publishes the repository as-is.
+# Tests run first, because a tax app that fails its own arithmetic checks
+# should never reach the device it is relied on from.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run the calculation test suite
+        run: node scripts/test.mjs
+
+      - name: Install Playwright
+        run: npm install --no-save playwright && npx playwright install --with-deps chromium
+
+      - name: Run the browser smoke test
+        run: node scripts/smoke.mjs
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

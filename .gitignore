@@ -1,0 +1,11 @@
+# Screenshots produced by the smoke test
+scratch-*.png
+
+# Dev-time only; the app itself has no dependencies
+node_modules/
+package-lock.json
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
